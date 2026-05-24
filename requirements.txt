@@ -1,0 +1,10 @@
+# Smart Product Recommendation Agent — direct dependencies
+requests>=2.31.0
+flask>=3.0.0
+python-dotenv>=1.0.0
+
+# AI stack: CrewAI orchestration + LangChain Gemini
+crewai>=1.14.0
+langchain>=1.2.0
+langchain-google-genai>=4.2.0
+langchain-core>=1.4.0

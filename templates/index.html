@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Product Recommendations</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <!-- Apply saved theme before paint to reduce flash -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("spa-theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <!-- Full-page overlay while form POST is in flight (see script.js) -->
+  <div id="loading-overlay" class="loading-overlay" aria-hidden="true" hidden>
+    <div class="loading-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Fetching products and scoring recommendations…</p>
+    </div>
+  </div>
+
+  <div class="page">
+    <header class="header">
+      <div class="header-row">
+        <div class="header-titles">
+          <h1>Smart Product Recommendation Agent</h1>
+          <p class="tagline">DummyJSON · scoring · Gemini (optional) · price history</p>
+        </div>
+        <!-- Theme toggle: handled in static/script.js + localStorage -->
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle light or dark theme">
+          <span class="theme-icon theme-icon-dark" aria-hidden="true">◐</span>
+          <span class="theme-label">Theme</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="card">
+      {# --- Categories: loaded from backend on every request --- #}
+      <section class="categories-panel" aria-labelledby="cat-heading">
+        <div class="categories-head">
+          <h2 id="cat-heading" class="h2-inline">Browse categories</h2>
+          <span class="badge">{{ all_categories|length }} from API</span>
+        </div>
+        {% if categories_error %}
+        <p class="error soft">{{ categories_error }}</p>
+        {% else %}
+        <p class="hint">Filter the list, click a chip to fill the field below, or type any category manually.</p>
+        <label class="sr-only" for="category-filter">Filter categories</label>
+        <input
+          type="search"
+          id="category-filter"
+          class="filter-input"
+          placeholder="Search categories…"
+          autocomplete="off"
+        />
+        <div class="chips" id="category-chips" role="list">
+          {% for c in all_categories %}
+          <button type="button" class="chip" data-value="{{ c }}" role="listitem">{{ c }}</button>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </section>
+
+      <form method="post" class="form" id="search-form">
+        <label for="category">Category <span class="optional">(select or type)</span></label>
+        <input
+          type="text"
+          id="category"
+          name="category"
+          list="categories-datalist"
+          placeholder="e.g. motorcycle, laptops, or pick from list"
+          value="{{ category_value }}"
+          autocomplete="off"
+        />
+        {# HTML datalist = lightweight searchable suggestions + free text #}
+        <datalist id="categories-datalist">
+          {% for c in all_categories %}
+          <option value="{{ c }}"></option>
+          {% endfor %}
+        </datalist>
+
+        <label for="budget">Max budget <span class="optional">(optional)</span></label>
+        <input
+          type="text"
+          id="budget"
+          name="budget"
+          placeholder="Leave empty for any budget"
+          value="{{ budget_value }}"
+          inputmode="decimal"
+        />
+
+        {% if budget_error %}
+        <p class="error">{{ budget_error }}</p>
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary">Get recommendations</button>
+      </form>
+
+      {% if result %}
+        {% if result.error %}
+          <section class="section error-box">
+            <h2 class="section-title">Something went wrong</h2>
+            <p>{{ result.error }}</p>
+          </section>
+        {% else %}
+          {% if fuzzy_category_highlight and result.matched_category %}
+          <div class="fuzzy-banner" role="status">
+            <strong>Fuzzy match:</strong> your input was resolved to category
+            <span class="fuzzy-pill">{{ result.matched_category }}</span>
+            for recommendations.
+          </div>
+          {% elif result.matched_category %}
+          <p class="meta resolved-line">Using category: <strong>{{ result.matched_category }}</strong></p>
+          {% endif %}
+
+          {% if result.info_messages %}
+          <section class="section info-box">
+            <h2 class="section-title">Notes</h2>
+            <ul>
+              {% for msg in result.info_messages %}
+              <li>{{ msg }}</li>
+              {% endfor %}
+            </ul>
+          </section>
+          {% endif %}
+
+          <section class="section results-block">
+            <h2 class="section-title">Recommendations</h2>
+            <p class="meta">
+              Products loaded: <strong>{{ result.total_products }}</strong>
+              {% if result.matched_category %} · Matched: <strong>{{ result.matched_category }}</strong>{% endif %}
+            </p>
+            {# Responsive product grid: see .product-grid in style.css #}
+            <div class="product-grid">
+              {% for p in result.recommendations %}
+              <article class="product-card">
+                <div class="product-card__media">
+                  {% if p.imageUrl %}
+                  <img
+                    class="product-card__img"
+                    src="{{ p.imageUrl }}"
+                    alt="{{ p.title }}"
+                    width="400"
+                    height="300"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  {% else %}
+                  <div class="product-card__placeholder" aria-hidden="true">No image</div>
+                  {% endif %}
+                  <div class="product-card__badges">
+                    {% if p.show_high_rating %}
+                    <span class="chip-badge chip-badge--rating">High Rating</span>
+                    {% endif %}
+                    {% if p.show_best_deal %}
+                    <span class="chip-badge chip-badge--deal">Best Deal</span>
+                    {% endif %}
+                    {% if p.show_low_stock %}
+                    <span class="chip-badge chip-badge--stock">Low Stock</span>
+                    {% endif %}
+                    {% if p.show_price_drop %}
+                    <span class="chip-badge chip-badge--drop">Price Drop</span>
+                    {% endif %}
+                  </div>
+                </div>
+                <div class="product-card__body">
+                  <h3 class="product-title">{{ p.title }}</h3>
+                  <p class="product-cat">{{ p.category }}</p>
+                  <dl class="product-stats">
+                    <div><dt>Price</dt><dd>${{ "%.2f"|format(p.price) }}</dd></div>
+                    <div><dt>Rating</dt><dd>{{ "%.1f"|format(p.rating) }}</dd></div>
+                    <div><dt>Discount</dt><dd>{{ "%.1f"|format(p.discountPercentage) }}%</dd></div>
+                    <div><dt>Score</dt><dd class="score">{{ "%.2f"|format(p.recommendationScore) }}</dd></div>
+                  </dl>
+                </div>
+              </article>
+              {% endfor %}
+            </div>
+          </section>
+
+          <section class="section alerts-region" aria-labelledby="alerts-heading">
+            <h2 id="alerts-heading" class="section-title">Alerts</h2>
+            <p class="hint">Separate panels for stock, price history, and discount deals.</p>
+            <div class="alert-grid">
+              <div class="alert-panel alert-panel--stock">
+                <h3 class="alert-panel__title">Low stock</h3>
+                {% if result.stock_alerts %}
+                <ul class="alerts">{% for a in result.stock_alerts %}<li>{{ a }}</li>{% endfor %}</ul>
+                {% else %}
+                <p class="muted">None</p>
+                {% endif %}
+              </div>
+              <div class="alert-panel alert-panel--price">
+                <h3 class="alert-panel__title">Price changes</h3>
+                {% if result.price_alerts %}
+                <ul class="alerts">{% for a in result.price_alerts %}<li>{{ a }}</li>{% endfor %}</ul>
+                {% else %}
+                <p class="muted">None yet (first run has no saved prices)</p>
+                {% endif %}
+              </div>
+              <div class="alert-panel alert-panel--deal">
+                <h3 class="alert-panel__title">Discount alerts</h3>
+                {% if result.discount_alerts %}
+                <ul class="alerts">{% for a in result.discount_alerts %}<li>{{ a }}</li>{% endfor %}</ul>
+                {% else %}
+                <p class="muted">None</p>
+                {% endif %}
+              </div>
+            </div>
+          </section>
+
+          <section class="section summary">
+            <h2 class="section-title">Recommendation summary</h2>
+            <pre class="summary-text">{{ result.summary }}</pre>
+          </section>
+        {% endif %}
+      {% endif %}
+    </main>
+
+    <footer class="footer">
+      <p>Console: <code>python main.py</code> · Web: <code>python app.py</code></p>
+    </footer>
+  </div>
+
+  <script src="{{ url_for('static', filename='script.js') }}" defer></script>
+</body>
+</html>
